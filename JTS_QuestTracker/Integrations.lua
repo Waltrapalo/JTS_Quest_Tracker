@@ -3,9 +3,8 @@ local _, ns = ...
 --[[
     Other addons, used only when they are installed:
 
-      TomTom   "TomTom Waypoint" in a quest's right-click menu, and optionally a waypoint every time
-               you focus a quest. The location comes from WoW's own quest helper
-               (C_QuestLog.GetNextWaypoint), the same place the built-in quest arrow points.
+      TomTom   "TomTom Waypoint" in a quest's right-click menu, and optionally a waypoint when
+               clicking or focusing a quest. Prefer WoW's quest helper; fall back to Questie.
       Masque   the quest item buttons join a Masque group ("JTS Quest Tracker" > "Quest Items"), so
                they can wear the same skin as your action bars.
 ]]
@@ -36,12 +35,34 @@ local function questLocation(questID)
     if not api then return nil end
 
     local ok, mapID, x, y = pcall(api, questID);
-    if not ok or not mapID or not x or not y then return nil end
-
-    local okNumbers = pcall(function() return mapID > 0 and x >= 0 and y >= 0 end);
-    if not okNumbers then return nil end
+    if not ok then return nil end
 
     return mapID, x, y;
+end
+
+local function validLocation(mapID, x, y)
+    local ok, valid = pcall(function()
+        return type(mapID) == "number" and mapID > 0
+            and type(x) == "number" and x >= 0 and x <= 1
+            and type(y) == "number" and y >= 0 and y <= 1;
+    end);
+    return ok and valid;
+end
+
+local function questieLocation(questID)
+    if not QuestieLoader then return end
+
+    -- Use the same current quest and nearest location as Questie's own tracker action.
+    local eligibility = QuestieLoader:ImportModule("TrackerMapEligibility");
+    local quest, capabilities = eligibility.RefreshAndGetCapabilities(questID);
+    if not capabilities or not capabilities.canNavigateQuest then return end
+
+    local distance = QuestieLoader:ImportModule("DistanceUtils");
+    local spawn, areaID = distance.GetNearestSpawnForQuest(quest);
+    if not spawn or not areaID then return end
+
+    local zones = QuestieLoader:ImportModule("ZoneDB");
+    return zones:GetUiMapIdByAreaId(areaID), spawn[1] / 100, spawn[2] / 100;
 end
 
 local waypoint; -- the one waypoint we keep (a new one replaces it)
@@ -51,9 +72,13 @@ function JQT:SetTomTomWaypoint(quest, quiet)
     if not addon or not quest then return false end
 
     local mapID, x, y = questLocation(quest.questID);
-    if not mapID then
-        if not quiet then say("WoW has no location for " .. tostring(quest.title) .. " right now, so there's nothing to point TomTom at.") end
-        return false;
+    if not validLocation(mapID, x, y) then
+        local ok;
+        ok, mapID, x, y = pcall(questieLocation, quest.questID);
+        if not ok or not validLocation(mapID, x, y) then
+            if not quiet then say("No location available in WoW or Questie for " .. tostring(quest.title) .. ".") end
+            return false;
+        end
     end
 
     if waypoint and addon.RemoveWaypoint then pcall(addon.RemoveWaypoint, addon, waypoint) end
@@ -61,6 +86,7 @@ function JQT:SetTomTomWaypoint(quest, quiet)
     local ok, uid = pcall(addon.AddWaypoint, addon, mapID, x, y, {
         title = quest.title,
         from = "JTS Quest Tracker",
+        crazy = true,
         persistent = false,
         minimap = true,
         world = true,
@@ -160,8 +186,8 @@ JQT.buttonsTabGroups.integrations = function()
                 type = "description", fontSize = "medium", order = 1
             },
             tomtomOnFocus = {
-                name = "TomTom Waypoint When Focusing", order = 2, width = 1.8,
-                desc = "Every time you focus a quest (middle-click, the menu or Auto-focus), TomTom gets a waypoint to it too.",
+                name = "TomTom on Click or Focus", order = 2, width = 1.8,
+                desc = "Click or focus a quest to point TomTom at it. Questie supplies the location when WoW has none.",
                 type = "toggle",
                 get = function() return JQT.db.profile.TomTomOnFocus end,
                 set = function(_, value) JQT.db.profile.TomTomOnFocus = value end,
