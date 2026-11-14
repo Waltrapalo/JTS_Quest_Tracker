@@ -51,3 +51,4 @@ LogCleanup.lua
 XPBar.lua
 QuestItemKey.lua
 MapQuestLog.lua
+TurnedInToday.lua
