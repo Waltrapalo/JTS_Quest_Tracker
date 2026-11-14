@@ -914,6 +914,8 @@ function JQT:RefreshView()
         self:AddQuest(quest, parent);
     end
 
+    self:AddTurnedInToday(self.questsContainer);
+
     if p.TrackerHeaderEnabled and headerAtBottom then
         self:AddTrackerHeader(trackerContainer, count(watchedQuests), questCount);
     end

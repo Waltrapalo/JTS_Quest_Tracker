@@ -102,6 +102,10 @@ function Compat:GetQuestObjectives(questID)
     return type(objectives) == "table" and objectives or {};
 end
 
+function Compat:GetQuestTitle(questID)
+    return try(Q("GetTitleForQuestID"), questID);
+end
+
 -- Is the player currently on this quest? nil when the client can't tell.
 function Compat:IsOnQuest(questID)
     local result = questID and try(Q("IsOnQuest"), questID);
