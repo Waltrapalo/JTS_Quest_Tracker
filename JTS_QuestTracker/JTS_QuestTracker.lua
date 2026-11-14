@@ -287,6 +287,10 @@ local SORT_BY = {
     ByManual = { "manualOrder", "<" } -- dragged into place by hand (ManualOrder.lua)
 };
 
+local function readyToTurnIn(quest)
+    return quest.completed and not quest.failed;
+end
+
 -- Compares one field; quests missing the value go last, ties keep quest log order.
 local function compareBy(quest, otherQuest, field, comparator)
     local value, otherValue = field and quest[field], field and otherQuest[field];
@@ -382,11 +386,12 @@ function JQT:Sort()
     table.sort(keys, function(a, b) return sortQuests(quests[a], quests[b]) end);
 
     local questOrder, zoneOrder = {}, {};
+    local minimal = self:IsMinimalSkin();
     for i, questID in pairs(keys) do
         questOrder[questID] = i;
 
         local zone = quests[questID].zone;
-        if zone then
+        if zone and not (minimal and readyToTurnIn(quests[questID])) then
             zoneOrder[zone] = zoneOrder[zone] or i;
         end
     end
@@ -754,10 +759,18 @@ end
 -- A zone header (click to collapse) and the container its quests go in.
 function JQT:AddZone(zone, questsInZone)
     local p = self.db.profile;
+    local minimal = self:IsMinimalSkin();
+    local key = "Z-" .. zone;
     local zoneContainer;
+    local font;
 
-    self.tracker:Font({
-        label = p.ZoneHeaderQuestCount and (zone .. " (" .. questsInZone .. ")") or zone,
+    local function label(isCollapsed)
+        if minimal then return (isCollapsed and "+  " or "−  ") .. zone:upper() end
+        return p.ZoneHeaderQuestCount and (zone .. " (" .. questsInZone .. ")") or zone;
+    end
+
+    font = self.tracker:Font({
+        label = label(collapsed()[key]),
         color = p.ZoneHeaderFontColor,
         size = p.ZoneHeaderFontSize,
         container = self.tracker:Container({
@@ -771,7 +784,9 @@ function JQT:AddZone(zone, questsInZone)
                         return;
                     end
 
-                    collapsed()["Z-" .. zone] = zoneContainer:ToggleHidden() or nil;
+                    if button ~= "LeftButton" then return end
+                    collapsed()[key] = zoneContainer:ToggleHidden() or nil;
+                    if minimal then font:SetLabel(label(collapsed()[key])) end
                     playSound("IG_MAINMENU_OPTION_CHECKBOX_ON");
                 end
             }
@@ -780,7 +795,7 @@ function JQT:AddZone(zone, questsInZone)
 
     zoneContainer = self.tracker:Container({
         container = self.questsContainer,
-        hidden = collapsed()["Z-" .. zone],
+        hidden = collapsed()[key],
         margin = { left = 8 },
         metadata = { header = false, zone = zone }
     });
@@ -847,7 +862,9 @@ function JQT:AddQuest(quest, parent)
             line(quest.summary, p.ObjectiveFontColor);
         end
     elseif quest.completed then
-        line(JQTL:GetString('QT_READY_TO_TURN_IN'), self:GetStatusColor("complete"));
+        if not (self:IsMinimalSkin() and readyToTurnIn(quest)) then
+            line(JQTL:GetString('QT_READY_TO_TURN_IN'), self:GetStatusColor("complete"));
+        end
     elseif quest.failed then
         line(JQTL:GetString('QT_FAILED'), self:GetStatusColor("failed"));
     else
@@ -903,14 +920,23 @@ function JQT:RefreshView()
     self.questContainers = {};
 
     local zoneContainers, questsPerZone = {}, {};
+    local minimal = self:IsMinimalSkin();
+    local readyCount = 0;
     for _, quest in pairs(watchedQuests) do
-        questsPerZone[quest.zone] = (questsPerZone[quest.zone] or 0) + 1;
+        if minimal and readyToTurnIn(quest) then
+            readyCount = readyCount + 1;
+        else
+            questsPerZone[quest.zone] = (questsPerZone[quest.zone] or 0) + 1;
+        end
     end
 
+    local readyContainer = readyCount > 0 and self:AddReadyToTurnIn(readyCount);
     for _, quest in pairs(watchedQuests) do
         local parent = self.questsContainer;
 
-        if p.ZoneHeaderEnabled then
+        if minimal and readyToTurnIn(quest) then
+            parent = readyContainer;
+        elseif p.ZoneHeaderEnabled then
             zoneContainers[quest.zone] = zoneContainers[quest.zone] or self:AddZone(quest.zone, questsPerZone[quest.zone]);
             parent = zoneContainers[quest.zone];
         end
