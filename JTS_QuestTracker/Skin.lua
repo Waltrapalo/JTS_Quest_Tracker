@@ -8,6 +8,7 @@ local _, ns = ...
                names with counts on the right, level badges, tag labels, objective counts on the
                right, rounded progress bars, check marks on finished objectives and a pill for
                "Ready to turn in". The focused quest gets a soft row highlight.
+      Minimal: a translucent panel and plain text in place of badges and pills.
 
     Modern doesn't replace any drawing code: the Classic code builds the rows as usual and this file
     restyles them right after. Pooled rows are reset every time they are handed out, so switching
@@ -19,6 +20,7 @@ local JQTL = JTS_QuestTrackerLocale;
 local Compat = LibStub("JTSQTCompat-1.0");
 local Font = JTS_QuestTrackerFont;
 local Container = JTS_QuestTrackerContainer;
+local spanish = GetLocale():sub(1, 2) == "es";
 
 local TEX = "Interface\\AddOns\\JTS_QuestTracker\\Textures\\";
 local CHECK = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t ";
@@ -30,7 +32,11 @@ local ZONE_COUNT = { r = 0.486, g = 0.514, b = 0.545 }; -- #7c838b
 local PANEL = { r = 0.067, g = 0.078, b = 0.094 };     -- #111418
 
 function JQT:IsModernSkin()
-    return self.db ~= nil and self.db.profile.Skin == "Modern";
+    return self.db ~= nil and (self.db.profile.Skin == "Modern" or self:IsMinimalSkin());
+end
+
+function JQT:IsMinimalSkin()
+    return self.db ~= nil and self.db.profile.Skin == "Minimal";
 end
 
 local function hexColor(hex, fallback)
@@ -319,9 +325,16 @@ local function modernPanel(background)
     background.texture:SetAllPoints();
     rounded(background.texture, "Round8", 8);
 
-    local opacity = tonumber(JQT.db.profile.ModernOpacity) or 0.88;
+    local minimal = JQT:IsMinimalSkin();
+    local p = JQT.db.profile;
+    local opacity = minimal and p.MinimalOpacity or p.ModernOpacity;
     background.texture:SetVertexColor(PANEL.r, PANEL.g, PANEL.b, opacity);
     background.texture:Show();
+
+    if minimal then
+        if background.modernBorder then background.modernBorder:Hide() end
+        return;
+    end
 
     background.modernBorder = background.modernBorder or background:CreateTexture(nil, "BORDER");
     background.modernBorder:SetAllPoints();
@@ -383,12 +396,13 @@ JQT:OnSettingsApplied(function(self) self:ApplySkin() end);
 -- Restyling the rows
 -- ---------------------------------------------------------------------------
 
--- The quest name without the level and tag (those get their own badge and label).
 function JQT:GetModernQuestTitle(quest)
     local p = self.db.profile;
     local level, tags = p.QuestLevelDisplay, p.QuestTagStyle;
 
-    p.QuestLevelDisplay, p.QuestTagStyle = "None", "Off";
+    if not self:IsMinimalSkin() then
+        p.QuestLevelDisplay, p.QuestTagStyle = "None", "Off";
+    end
     local ok, title = pcall(self.GetQuestHeader, self, quest);
     p.QuestLevelDisplay, p.QuestTagStyle = level, tags;
 
@@ -436,6 +450,7 @@ local function styleTrackerHeader(self, trackerContainer, visible, questCount)
     local font = header and header.elements and header.elements[1];
     if not font or font.type ~= "font" then return end
 
+    local minimal = self:IsMinimalSkin();
     restyle(font, function()
         local label = JQTL:GetString('QT_QUESTS'):upper();
 
@@ -449,8 +464,10 @@ local function styleTrackerHeader(self, trackerContainer, visible, questCount)
         font:ModernAccent(accent());
 
         local text, color = headerCount(self, visible, questCount);
-        if text then font:ModernRight(text, color, "pill") end
+        if text then font:ModernRight(text, color, not minimal and "pill" or nil) end
     end);
+
+    if minimal then return end
 
     -- A faint line between the header and the list.
     header.modernDivider = header.modernDivider or header:CreateTexture(nil, "ARTWORK");
@@ -487,9 +504,8 @@ function JQT:StyleStickyHeader(sticky, visible, questCount)
     font:ModernAccent(accent());
 
     local text, color = headerCount(self, visible, questCount);
-    if text then font:ModernRight(text, color, "pill") end
+    if text then font:ModernRight(text, color, not self:IsMinimalSkin() and "pill" or nil) end
 
-    local opacity = tonumber(self.db.profile.ModernOpacity) or 0.88;
     -- Solid, so the rows scrolling underneath don't show through.
     sticky.bg:SetColorTexture(PANEL.r, PANEL.g, PANEL.b, 1);
     sticky:SetHeight((font:GetRealHeight() or 12) + 14);
@@ -537,6 +553,7 @@ local function styleQuest(self, quest, questContainer)
     if not title then return end
 
     local flashing = self:IsFlashing(quest.questID);
+    local minimal = self:IsMinimalSkin();
 
     restyle(title, function()
         title:SetLabel(self:GetModernQuestTitle(quest));
@@ -544,14 +561,16 @@ local function styleQuest(self, quest, questContainer)
         -- your own colour, or flashing), the same as in Classic.
 
         local level = tonumber(quest.level);
-        if level and level > 0 then
+        if not minimal and level and level > 0 then
             title:ModernBadge(tostring(level), self:GetDifficultyColor(quest.difficulty));
         end
 
-        local okTag, tag = pcall(self.GetQuestTag, self, quest);
-        if okTag and tag and p.QuestTagStyle ~= "Off" then
-            local label = self:FormatQuestTag(tag, "Full"):match("^ %((.*)%)$");
-            if label then title:ModernRight(label:upper(), MUTED, "box") end
+        if not minimal and p.QuestTagStyle ~= "Off" then
+            local okTag, tag = pcall(self.GetQuestTag, self, quest);
+            if okTag and tag then
+                local label = self:FormatQuestTag(tag, "Full"):match("^ %((.*)%)$");
+                if label then title:ModernRight(label:upper(), MUTED, "box") end
+            end
         end
     end);
 
@@ -594,12 +613,12 @@ local function styleQuest(self, quest, questContainer)
                     local c = self:GetStatusColor("complete");
                     row:SetLabel(CHECK .. text);
                     row:SetColor(c);
-                    row:ModernPill(c);
+                    if not minimal then row:ModernPill(c) end
                 elseif text == failed then
                     local c = self:GetStatusColor("failed");
                     row:SetLabel(text);
                     row:SetColor(c);
-                    row:ModernPill(c);
+                    if not minimal then row:ModernPill(c) end
                 elseif isTimer then
                     row:SetLabel(text);
                 else
@@ -619,7 +638,11 @@ local function styleQuest(self, quest, questContainer)
                     end
 
                     -- The objective keeps the colour the tracker gave it (Appearance > Objectives).
-                    row:ModernBar();
+                    if minimal and not p.MinimalProgressBars then
+                        if row.progress ~= nil then row:SetProgress(nil) end
+                    else
+                        row:ModernBar();
+                    end
                 end
             end);
         end
@@ -741,17 +764,22 @@ JQT.skinOptions = function()
     end
 
     local function notModern() return not JQT:IsModernSkin() end
+    local function notMinimal() return not JQT:IsMinimalSkin() end
+    local function minimal() return JQT:IsMinimalSkin() end
 
     return {
         skin = {
-            name = "Skin", order = 1, width = 1.0,
-            desc = "|cffffffffClassic|r: the tracker as it has always looked.\n|cffffffffModern|r: a dark rounded panel, level badges, quest type labels, counts on the right and rounded progress bars.\n\nNew installs start on Modern; you can switch any time.",
-            type = "select", arg = "Skin", values = { Classic = "Classic", Modern = "Modern" }, sorting = { "Classic", "Modern" },
+            name = spanish and "Estilo" or "Skin", order = 1, width = 1.0,
+            desc = spanish and "Minimalista usa un fondo discreto y muestra el progreso como texto."
+                or "Minimal uses a subtle background and shows progress as text.",
+            type = "select", arg = "Skin",
+            values = { Classic = "Classic", Modern = "Modern", Minimal = spanish and "Minimalista" or "Minimal" },
+            sorting = { "Classic", "Modern", "Minimal" },
             set = set
         },
         accent = {
-            name = "Accent Color", order = 2, width = 0.9,
-            desc = "The color of the bar next to the tracker header in the Modern skin.",
+            name = spanish and "Color de acento" or "Accent Color", order = 2, width = 1.0,
+            desc = spanish and "Color de la línea junto al título del panel." or "The color of the line next to the tracker title.",
             type = "color", hasAlpha = false, arg = "ModernAccent",
             get = function() local c = accent(); return c.r, c.g, c.b end,
             set = function(_, r, g, b)
@@ -761,10 +789,22 @@ JQT.skinOptions = function()
             disabled = notModern
         },
         opacity = {
-            name = "Panel Opacity", order = 3, width = 1.0,
+            name = spanish and "Opacidad del fondo" or "Panel Opacity", order = 3, width = 1.1,
             desc = "How solid the Modern panel is. Default is 88%.",
             type = "range", arg = "ModernOpacity", min = 0.2, max = 1, step = 0.01, isPercent = true,
-            set = set, disabled = notModern
+            set = set, disabled = notModern, hidden = minimal
+        },
+        minimalOpacity = {
+            name = spanish and "Opacidad del fondo" or "Panel Opacity", order = 3, width = 1.1,
+            type = "range", arg = "MinimalOpacity", min = 0, max = 1, step = 0.01, isPercent = true,
+            set = set, hidden = notMinimal
+        },
+        minimalBars = {
+            name = spanish and "Barras de progreso" or "Progress Bars", order = 4, width = 1.5,
+            desc = spanish and "Muestra barras cuando también están activadas en la configuración de objetivos."
+                or "Shows bars when they are also enabled in the objective settings.",
+            type = "toggle", arg = "MinimalProgressBars",
+            set = set, hidden = notMinimal
         },
     };
 end
