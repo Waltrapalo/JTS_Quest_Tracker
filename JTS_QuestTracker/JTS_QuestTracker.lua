@@ -652,7 +652,8 @@ local function showQuestTooltip(quest, target)
     end
 
     GameTooltip:AddLine(" ");
-    GameTooltip:AddLine("Click: open in quest log   Right-click: menu", grey.r, grey.g, grey.b);
+    local click = JQT.db.profile.TomTomOnFocus and JQT:HasTomTom() and "Click: quest log + TomTom" or "Click: open in quest log";
+    GameTooltip:AddLine(click .. "   Right-click: menu", grey.r, grey.g, grey.b);
     GameTooltip:AddLine("Middle-click: focus (map arrow)", grey.r, grey.g, grey.b);
     GameTooltip:AddLine("Shift: untrack   Ctrl: link in chat   Alt: Wowhead", grey.r, grey.g, grey.b);
 
@@ -684,6 +685,9 @@ function JQT:OnQuestClicked(quest, button)
     elseif IsControlKeyDown() then
         ChatEdit_InsertLink(Compat:GetQuestChatLink(quest));
     else
+        if self.db.profile.TomTomOnFocus then
+            self:SetTomTomWaypoint(quest);
+        end
         QLH:ToggleQuest(quest.questID);
     end
 end
