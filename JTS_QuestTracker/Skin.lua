@@ -511,6 +511,26 @@ function JQT:StyleStickyHeader(sticky, visible, questCount)
     sticky:SetHeight((font:GetRealHeight() or 12) + 14);
 end
 
+function JQT:AddReadyToTurnIn(questCount)
+    local label = spanish and "Listas para entregar" or "Ready to turn in";
+    local section = self.tracker:Container({
+        container = self.questsContainer,
+        metadata = {},
+        margin = { left = 2, bottom = 6 },
+    });
+    section:SetOrder(0, false);
+
+    self.tracker:Font({
+        container = section,
+        label = ("%s (%d)"):format(label, questCount),
+        size = self.db.profile.ZoneHeaderFontSize,
+        color = self:GetStatusColor("complete"),
+        margin = { bottom = 5 },
+    });
+
+    return section;
+end
+
 local function styleZoneHeader(self, zone, questsInZone)
     local header = self.questsContainer.elements[#self.questsContainer.elements - 1];
     local font = header and header.elements and header.elements[1];
@@ -520,7 +540,7 @@ local function styleZoneHeader(self, zone, questsInZone)
 
     restyle(font, function()
         font:SetSize(math.max(9, (p.ObjectiveFontSize or 12) - 1));
-        font:SetLabel(tostring(zone):upper());
+        if not self:IsMinimalSkin() then font:SetLabel(tostring(zone):upper()) end
         font:SetColor(ZONE);
         font:SetHoverColor(TEXT);
 
